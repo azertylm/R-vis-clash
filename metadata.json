@@ -1,0 +1,6 @@
+{
+  "name": "Révis'Clash — Arène 1v1 Alphabette",
+  "description": "Arène de révision en 1v1 façon jeu de cartes tactique rapide (3 minutes par match) pour collégiens et lycéens (Brevet / Bac) avec 4 decks hors-ligne, générateur IA Express, cartes Joker, mode Pass & Play et Boss Fight Solo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
