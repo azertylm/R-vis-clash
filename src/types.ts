@@ -1,5 +1,20 @@
 export type SchoolLevel = 'Collège' | 'Lycée';
 
+export type DifficultyTier = 'FACILE' | 'MOYEN' | 'DIFFICILE' | 'EXPERT';
+
+export interface DifficultyConfig {
+  id: DifficultyTier;
+  label: string;
+  subtitle: string;
+  turnSeconds: number;
+  sabotagedSeconds: number;
+  suddenDeathSeconds: number;
+  scoreMultiplier: number;
+  wrongPenalty: number;
+  bossAccuracyBoost: number;
+  bossSpeedFactor: number; // < 1 means faster boss thinking
+}
+
 export type JokerType = 'BROUILLARD' | 'CHRONO_HALF' | 'DOUBLE_MISE';
 
 export interface JokerCard {
@@ -15,6 +30,7 @@ export interface QuestionCard {
   id: string;
   category: string;
   difficulty: SchoolLevel;
+  tier?: 'FACILE' | 'MOYEN' | 'DIFFICILE';
   question: string;
   blurTargets: string[]; // 2 words from `question` blurred for 3s when BROUILLARD is active
   options: string[]; // 4 options

@@ -16,13 +16,22 @@ async function startServer() {
 
   app.post('/api/generate-deck', async (req, res) => {
     try {
-      const { courseText, theme, level } = req.body as {
+      const { courseText, theme, level, difficultyTier } = req.body as {
         courseText?: string;
         theme?: string;
         level?: 'Collège' | 'Lycée';
+        difficultyTier?: 'FACILE' | 'MOYEN' | 'DIFFICILE' | 'EXPERT';
       };
 
       const selectedLevel = level === 'Lycée' ? 'Lycée (Première / Terminale - Bac)' : 'Collège (3e - Brevet)';
+      const tierMap: Record<string, string> = {
+        FACILE: 'Niveau Facile (Échauffement : questions fondamentales, définitions claires et calculs directs)',
+        MOYEN: 'Niveau Moyen (Brevet / Bac Standard : questions classiques d’examen avec pièges courants)',
+        DIFFICILE: 'Niveau Difficile (Mention Très Bien : questions pointues, subtilités de cours et calculs à plusieurs étapes)',
+        EXPERT: 'Niveau Expert (Olympiades / Prépa : questions redoutables, pièges subtils et maîtrise approfondie)',
+      };
+      const selectedTierDesc = tierMap[difficultyTier || 'MOYEN'] || tierMap.MOYEN;
+
       const hasCourse = courseText && courseText.trim().length >= 20;
       const hasTheme = theme && theme.trim().length >= 2;
 
@@ -51,12 +60,13 @@ async function startServer() {
         ? `Voici le cours ou les notes fournis par l'élève :\n"""\n${courseText!.slice(0, 12000)}\n"""\n${hasTheme ? `Thème complémentaire indiqué : ${theme}` : ''}`
         : `Sujet / Thème demandé : "${theme}"`;
 
-      const prompt = `Génère un deck de révision tactique compétitif de type "Révis'Clash" pour le niveau ${selectedLevel}.
+      const prompt = `Génère un deck de révision tactique compétitif de type "Révis'Clash" pour le cycle ${selectedLevel}.
+Difficulté ciblée : ${selectedTierDesc}.
 ${promptContext}
 
 Règles de conception obligatoires :
 1. Crée un titre de deck percutant (ex: "Maths : Théorème de Thalès & Pièges", "Histoire : Crises de la Guerre Froide") et un court sous-titre.
-2. Génère EXACTEMENT 12 cartes-questions principales ("cards") + 1 carte décisive de Mort Subite ("suddenDeathCard").
+2. Génère EXACTEMENT 12 cartes-questions principales ("cards") à difficulté progressive (4 cartes "FACILE", 4 cartes "MOYEN", 4 cartes "DIFFICILE" adaptées au calibre demandé) + 1 carte décisive de Mort Subite ("suddenDeathCard") de niveau "DIFFICILE".
 3. Chaque carte est un QCM piège mais rigoureux et juste à 4 choix ("options" : tableau de 4 chaînes courtes et claires).
 4. Les distracteurs (mauvais choix) doivent être des erreurs classiques d'élèves (confusions fréquentes, oublis de signe, dates proches) pour rendre le duel palpitant.
 5. "correctIndex" est l'entier entre 0 et 3 correspondant à la bonne réponse.
@@ -69,6 +79,10 @@ Règles de conception obligatoires :
           question: {
             type: Type.STRING,
             description: "L'énoncé clair de la question ou formule.",
+          },
+          tier: {
+            type: Type.STRING,
+            description: 'Calibre de la carte : "FACILE", "MOYEN" ou "DIFFICILE".',
           },
           blurTargets: {
             type: Type.ARRAY,
@@ -89,7 +103,7 @@ Règles de conception obligatoires :
             description: "Explication courte et pédagogique en 1 ou 2 phrases.",
           },
         },
-        required: ['question', 'blurTargets', 'options', 'correctIndex', 'explanation'],
+        required: ['question', 'tier', 'blurTargets', 'options', 'correctIndex', 'explanation'],
       };
 
       const response = await ai.models.generateContent({
@@ -136,29 +150,64 @@ Règles de conception obligatoires :
         });
       }
 
-      const normalizedCards = parsed.cards.slice(0, 12).map((c: any, idx: number) => ({
-        id: `ai-card-${Date.now()}-${idx}`,
-        category: parsed.category || 'Personnalisé',
-        difficulty: level === 'Lycée' ? 'Lycée' : 'Collège',
-        question: String(c.question || ''),
-        blurTargets: Array.isArray(c.blurTargets) ? c.blurTargets.slice(0, 2).map(String) : [],
-        options: Array.isArray(c.options) ? c.options.slice(0, 4).map(String) : ['Choix A', 'Choix B', 'Choix C', 'Choix D'],
-        correctIndex: typeof c.correctIndex === 'number' && c.correctIndex >= 0 && c.correctIndex <= 3 ? c.correctIndex : 0,
-        explanation: String(c.explanation || ''),
-      }));
+      // Helper to shuffle the 4 options of a card using Fisher-Yates so the correct answer is evenly distributed across A, B, C, and D
+      const shuffleCardOptions = (options: string[], correctIdx: number) => {
+        const safeOptions = options.length === 4 ? [...options] : ['Choix A', 'Choix B', 'Choix C', 'Choix D'];
+        const safeCorrectIdx = correctIdx >= 0 && correctIdx <= 3 ? correctIdx : 0;
+        const tagged = safeOptions.map((text, i) => ({
+          text,
+          isCorrect: i === safeCorrectIdx,
+        }));
+        for (let i = tagged.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          const temp = tagged[i];
+          tagged[i] = tagged[j];
+          tagged[j] = temp;
+        }
+        return {
+          options: tagged.map((t) => t.text),
+          correctIndex: tagged.findIndex((t) => t.isCorrect),
+        };
+      };
+
+      const normalizeTier = (rawTier: any, idx: number): 'FACILE' | 'MOYEN' | 'DIFFICILE' => {
+        if (rawTier === 'FACILE' || rawTier === 'MOYEN' || rawTier === 'DIFFICILE') return rawTier;
+        if (idx < 4) return 'FACILE';
+        if (idx < 8) return 'MOYEN';
+        return 'DIFFICILE';
+      };
+
+      const normalizedCards = parsed.cards.slice(0, 12).map((c: any, idx: number) => {
+        const rawOpts = Array.isArray(c.options) ? c.options.slice(0, 4).map(String) : ['Choix A', 'Choix B', 'Choix C', 'Choix D'];
+        const rawCorrect = typeof c.correctIndex === 'number' ? c.correctIndex : 0;
+        const shuffled = shuffleCardOptions(rawOpts, rawCorrect);
+        return {
+          id: `ai-card-${Date.now()}-${idx}`,
+          category: parsed.category || 'Personnalisé',
+          difficulty: level === 'Lycée' ? 'Lycée' : 'Collège',
+          tier: normalizeTier(c.tier, idx),
+          question: String(c.question || ''),
+          blurTargets: Array.isArray(c.blurTargets) ? c.blurTargets.slice(0, 2).map(String) : [],
+          options: shuffled.options,
+          correctIndex: shuffled.correctIndex,
+          explanation: String(c.explanation || ''),
+        };
+      });
 
       const rawSD = parsed.suddenDeathCard || parsed.cards[0];
+      const sdShuffled = shuffleCardOptions(
+        Array.isArray(rawSD.options) ? rawSD.options.slice(0, 4).map(String) : ['Choix A', 'Choix B', 'Choix C', 'Choix D'],
+        typeof rawSD.correctIndex === 'number' ? rawSD.correctIndex : 0
+      );
       const suddenDeathCard = {
         id: `ai-sd-${Date.now()}`,
         category: parsed.category || 'Personnalisé',
         difficulty: level === 'Lycée' ? 'Lycée' : 'Collège',
+        tier: 'DIFFICILE' as const,
         question: String(rawSD.question || ''),
         blurTargets: Array.isArray(rawSD.blurTargets) ? rawSD.blurTargets.slice(0, 2).map(String) : [],
-        options: Array.isArray(rawSD.options) ? rawSD.options.slice(0, 4).map(String) : ['Choix A', 'Choix B', 'Choix C', 'Choix D'],
-        correctIndex:
-          typeof rawSD.correctIndex === 'number' && rawSD.correctIndex >= 0 && rawSD.correctIndex <= 3
-            ? rawSD.correctIndex
-            : 0,
+        options: sdShuffled.options,
+        correctIndex: sdShuffled.correctIndex,
         explanation: String(rawSD.explanation || ''),
       };
 

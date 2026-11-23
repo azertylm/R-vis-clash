@@ -1,4 +1,143 @@
-import { BossProfile, Deck, JokerCard, JokerType } from '../types';
+import {
+  BossProfile,
+  Deck,
+  DifficultyConfig,
+  DifficultyTier,
+  JokerCard,
+  JokerType,
+  QuestionCard,
+} from '../types';
+
+export const DIFFICULTY_CONFIGS: Record<DifficultyTier, DifficultyConfig> = {
+  FACILE: {
+    id: 'FACILE',
+    label: 'Facile',
+    subtitle: 'Échauffement · 16s par carte · Sans malus',
+    turnSeconds: 16,
+    sabotagedSeconds: 8,
+    suddenDeathSeconds: 10,
+    scoreMultiplier: 1.0,
+    wrongPenalty: 0,
+    bossAccuracyBoost: -0.1,
+    bossSpeedFactor: 1.25,
+  },
+  MOYEN: {
+    id: 'MOYEN',
+    label: 'Moyen',
+    subtitle: 'Brevet & Bac Standard · 12s par carte · Bonus x1.2',
+    turnSeconds: 12,
+    sabotagedSeconds: 6,
+    suddenDeathSeconds: 8,
+    scoreMultiplier: 1.2,
+    wrongPenalty: 0,
+    bossAccuracyBoost: 0,
+    bossSpeedFactor: 1.0,
+  },
+  DIFFICILE: {
+    id: 'DIFFICILE',
+    label: 'Difficile',
+    subtitle: 'Mention Très Bien · 9s par carte · Bonus x1.5 (-20 pts si erreur)',
+    turnSeconds: 9,
+    sabotagedSeconds: 5,
+    suddenDeathSeconds: 6,
+    scoreMultiplier: 1.5,
+    wrongPenalty: 20,
+    bossAccuracyBoost: 0.08,
+    bossSpeedFactor: 0.85,
+  },
+  EXPERT: {
+    id: 'EXPERT',
+    label: 'Expert',
+    subtitle: 'Mode Blitz · 7s par carte · Bonus x2.0 (-40 pts si erreur)',
+    turnSeconds: 7,
+    sabotagedSeconds: 4,
+    suddenDeathSeconds: 5,
+    scoreMultiplier: 2.0,
+    wrongPenalty: 40,
+    bossAccuracyBoost: 0.14,
+    bossSpeedFactor: 0.72,
+  },
+};
+
+export function shuffleQuestionCard(card: QuestionCard, indexHint = 0): QuestionCard {
+  const inferredTier: 'FACILE' | 'MOYEN' | 'DIFFICILE' =
+    card.tier || (indexHint < 4 ? 'FACILE' : indexHint < 8 ? 'MOYEN' : 'DIFFICILE');
+
+  const tagged = card.options.map((text, idx) => ({
+    text,
+    isCorrect: idx === card.correctIndex,
+  }));
+
+  for (let i = tagged.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const temp = tagged[i];
+    tagged[i] = tagged[j];
+    tagged[j] = temp;
+  }
+
+  return {
+    ...card,
+    tier: inferredTier,
+    options: tagged.map((t) => t.text),
+    correctIndex: tagged.findIndex((t) => t.isCorrect),
+  };
+}
+
+export function shuffleDeckForMatch(
+  deck: Deck,
+  difficultyTier: DifficultyTier = 'MOYEN'
+): Deck {
+  const annotated = deck.cards.map((c, idx) => ({
+    ...c,
+    tier: c.tier || (idx < 4 ? 'FACILE' : idx < 8 ? 'MOYEN' : 'DIFFICILE'),
+  }));
+
+  // Order cards according to difficultyTier:
+  // - FACILE / MOYEN: Progressive ramp (FACILE -> MOYEN -> DIFFICILE)
+  // - DIFFICILE / EXPERT: Start immediately with DIFFICILE and MOYEN traps
+  const tierWeight = (t: 'FACILE' | 'MOYEN' | 'DIFFICILE') => {
+    if (difficultyTier === 'DIFFICILE' || difficultyTier === 'EXPERT') {
+      return t === 'DIFFICILE' ? 0 : t === 'MOYEN' ? 1 : 2;
+    }
+    return t === 'FACILE' ? 0 : t === 'MOYEN' ? 1 : 2;
+  };
+
+  const orderedSource = [...annotated].sort((a, b) => {
+    const diff = tierWeight(a.tier!) - tierWeight(b.tier!);
+    return diff !== 0 ? diff : Math.random() - 0.5;
+  });
+
+  // Shuffle the 4 options of every card so the correct answer is never stuck on A or B,
+  // and prevent 3 identical answer positions in a row.
+  const cardsWithVariedPositions: QuestionCard[] = [];
+  let lastIndex = -1;
+  let repeatCount = 0;
+
+  orderedSource.forEach((rawCard, idx) => {
+    let candidate = shuffleQuestionCard(rawCard, idx);
+    let attempts = 0;
+    while (candidate.correctIndex === lastIndex && repeatCount >= 1 && attempts < 6) {
+      candidate = shuffleQuestionCard(rawCard, idx);
+      attempts++;
+    }
+    if (candidate.correctIndex === lastIndex) {
+      repeatCount++;
+    } else {
+      lastIndex = candidate.correctIndex;
+      repeatCount = 1;
+    }
+    cardsWithVariedPositions.push(candidate);
+  });
+
+  return {
+    ...deck,
+    cards: cardsWithVariedPositions,
+    suddenDeathCard: shuffleQuestionCard(
+      { ...deck.suddenDeathCard, tier: 'DIFFICILE' },
+      11
+    ),
+  };
+}
 
 export const JOKER_CATALOG: Record<JokerType, Omit<JokerCard, 'id' | 'used'>> = {
   BROUILLARD: {

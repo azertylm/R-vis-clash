@@ -4,24 +4,35 @@ import {
   BookOpenCheck,
   CheckCircle2,
   Flame,
+  Gauge,
   Home,
   Printer,
   RotateCcw,
+  Swords,
   Trophy,
   XCircle,
   Zap,
 } from 'lucide-react';
-import { Deck, GameMode, MissedQuestionRecord, PlayerMatchState } from '../types';
+import {
+  Deck,
+  DifficultyTier,
+  GameMode,
+  MissedQuestionRecord,
+  PlayerMatchState,
+} from '../types';
+import { DIFFICULTY_CONFIGS } from '../data/decks';
 
 interface SummaryViewProps {
   deck: Deck;
   gameMode: GameMode;
+  difficultyTier: DifficultyTier;
   p1: PlayerMatchState;
   p2: PlayerMatchState;
   missedRecords: MissedQuestionRecord[];
   wasSuddenDeath: boolean;
   isBigMode: boolean;
   onReplaySameDeck: () => void;
+  onPracticeMissedOnly: () => void;
   onBackToLobby: () => void;
   onActiveTextChange: (text: string) => void;
 }
@@ -29,17 +40,20 @@ interface SummaryViewProps {
 export const SummaryView: React.FC<SummaryViewProps> = ({
   deck,
   gameMode,
+  difficultyTier,
   p1,
   p2,
   missedRecords,
   wasSuddenDeath,
   isBigMode,
   onReplaySameDeck,
+  onPracticeMissedOnly,
   onBackToLobby,
   onActiveTextChange,
 }) => {
   const isP1Winner = p1.score >= p2.score;
   const winner = isP1Winner ? p1 : p2;
+  const diffConfig = DIFFICULTY_CONFIGS[difficultyTier];
 
   useEffect(() => {
     const missedSummary =
@@ -55,11 +69,20 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
             .join(' ');
 
     onActiveTextChange(
-      `Fin du duel sur ${deck.title}. Victoire de ${winner.name} avec ${winner.score} points contre ${
+      `Fin du duel en mode ${diffConfig.label} sur ${deck.title}. Victoire de ${winner.name} avec ${winner.score} points contre ${
         isP1Winner ? p2.score : p1.score
       } points. Ce que tu dois retenir : ${missedSummary}`
     );
-  }, [deck.title, winner, isP1Winner, p1.score, p2.score, missedRecords, onActiveTextChange]);
+  }, [
+    deck.title,
+    diffConfig.label,
+    winner,
+    isP1Winner,
+    p1.score,
+    p2.score,
+    missedRecords,
+    onActiveTextChange,
+  ]);
 
   const calcAccuracy = (player: PlayerMatchState) =>
     player.totalAnswered > 0 ? Math.round((player.correctCount / player.totalAnswered) * 100) : 0;
@@ -70,12 +93,17 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
       <section className="rounded-2xl border-2 border-indigo-500/80 bg-white dark:bg-[#151f32] p-6 sm:p-8 shadow-lg">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-200 dark:border-slate-800">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-amber-600 dark:text-amber-400">
               <Trophy className="w-4 h-4" />
               <span>
                 {wasSuddenDeath
                   ? 'Victoire arrachée en Mort Subite !'
                   : `Résultat du Duel · ${deck.title}`}
+              </span>
+              <span>·</span>
+              <span className="text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                <Gauge className="w-3.5 h-3.5" />
+                Difficulté {diffConfig.label} (x{diffConfig.scoreMultiplier.toFixed(1)})
               </span>
             </div>
             <h1
@@ -88,13 +116,23 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
             <p className="text-sm text-slate-500 dark:text-slate-400">
               {gameMode === 'BOSS_SOLO'
                 ? isP1Winner
-                  ? `Tu as terrassé ${p2.name} sur ce chapitre !`
+                  ? `Tu as terrassé ${p2.name} en difficulté ${diffConfig.label} !`
                   : `${p2.name} l'emporte cette fois. Relis ta fiche ci-dessous et prends ta revanche !`
-                : `Beau duel en Pass & Play entre ${p1.name} et ${p2.name}.`}
+                : `Beau duel en Pass & Play (${diffConfig.label}) entre ${p1.name} et ${p2.name}.`}
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 shrink-0 no-print">
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0 no-print">
+            {missedRecords.length > 0 && (
+              <button
+                type="button"
+                onClick={onPracticeMissedOnly}
+                className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-sm flex items-center gap-2 shadow-sm cursor-pointer"
+              >
+                <Swords className="w-4 h-4" />
+                <span>Rejouer mes erreurs ({missedRecords.length})</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={onReplaySameDeck}
@@ -201,7 +239,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
               Sans-faute intégral (100% de réussite) !
             </h3>
             <p className="text-sm text-slate-600 dark:text-slate-300 max-w-md mx-auto">
-              Aucune question n&apos;a été ratée pendant ce duel. Tu maîtrises parfaitement ce deck !
+              Aucune question n&apos;a été ratée pendant ce duel. Passe au niveau de difficulté supérieur pour tester tes réflexes !
             </p>
           </div>
         ) : (
@@ -220,7 +258,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
                 >
                   <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                     <span>
-                      Point #{idx + 1} · {item.card.category} ({item.card.difficulty})
+                      Point #{idx + 1} · {item.card.category} ({item.card.tier || item.card.difficulty})
                     </span>
                     <span className="font-semibold">Manqué par {item.playerName}</span>
                   </div>

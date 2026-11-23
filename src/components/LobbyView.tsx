@@ -5,7 +5,9 @@ import {
   Check,
   Clock,
   CloudFog,
+  Eye,
   Flame,
+  Gauge,
   Loader2,
   Play,
   PlusCircle,
@@ -14,10 +16,11 @@ import {
   Swords,
   Trash2,
   Users,
+  X,
   Zap,
 } from 'lucide-react';
-import { BossId, Deck, GameMode, JokerType, SchoolLevel } from '../types';
-import { BOSS_PROFILES, JOKER_CATALOG } from '../data/decks';
+import { BossId, Deck, DifficultyTier, GameMode, JokerType, SchoolLevel } from '../types';
+import { BOSS_PROFILES, DIFFICULTY_CONFIGS, JOKER_CATALOG } from '../data/decks';
 
 interface LobbyViewProps {
   decks: Deck[];
@@ -27,6 +30,8 @@ interface LobbyViewProps {
   onDeleteCustomDeck: (id: string) => void;
   gameMode: GameMode;
   onChangeGameMode: (mode: GameMode) => void;
+  difficultyTier: DifficultyTier;
+  onChangeDifficultyTier: (tier: DifficultyTier) => void;
   selectedBossId: BossId;
   onSelectBoss: (id: BossId) => void;
   player1Name: string;
@@ -42,6 +47,7 @@ interface LobbyViewProps {
 }
 
 const ALL_JOKER_TYPES: JokerType[] = ['BROUILLARD', 'CHRONO_HALF', 'DOUBLE_MISE'];
+const ALL_DIFFICULTY_TIERS: DifficultyTier[] = ['FACILE', 'MOYEN', 'DIFFICILE', 'EXPERT'];
 
 export const LobbyView: React.FC<LobbyViewProps> = ({
   decks,
@@ -51,6 +57,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   onDeleteCustomDeck,
   gameMode,
   onChangeGameMode,
+  difficultyTier,
+  onChangeDifficultyTier,
   selectedBossId,
   onSelectBoss,
   player1Name,
@@ -66,12 +74,15 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 }) => {
   const [showGenerator, setShowGenerator] = useState(false);
   const [genLevel, setGenLevel] = useState<SchoolLevel>('Collège');
+  const [genDifficulty, setGenDifficulty] = useState<DifficultyTier>('MOYEN');
   const [genTheme, setGenTheme] = useState('');
   const [genCourseText, setGenCourseText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  const [previewDeck, setPreviewDeck] = useState<Deck | null>(null);
 
   const selectedDeck = decks.find((d) => d.id === selectedDeckId) || decks[0];
+  const currentDiffConfig = DIFFICULTY_CONFIGS[difficultyTier];
 
   const toggleJokerSelection = (
     current: JokerType[],
@@ -109,6 +120,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           courseText: genCourseText.trim(),
           theme: genTheme.trim(),
           level: genLevel,
+          difficultyTier: genDifficulty,
         }),
       });
       const data = await res.json();
@@ -122,6 +134,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       };
       onAddCustomDeck(newDeck);
       onSelectDeck(newDeck.id);
+      onChangeDifficultyTier(genDifficulty);
       setShowGenerator(false);
       setGenTheme('');
       setGenCourseText('');
@@ -144,14 +157,14 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       <section className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-6">
         <div className="space-y-2 max-w-2xl">
           <div className="text-xs font-semibold tracking-wider uppercase text-indigo-600 dark:text-indigo-400">
-            Arène Tactique 1v1 · 12 Cartes · 3 Minutes
+            Arène Tactique 1v1 · 12 Cartes · 4 Niveaux de Difficulté
           </div>
           <h1
             className={`font-display font-extrabold tracking-tight text-slate-900 dark:text-white [text-wrap:balance] ${
               isBigMode ? 'text-3xl sm:text-4xl' : 'text-2xl sm:text-3xl'
             }`}
           >
-            Choisis ton Deck, prépare tes 2 Jokers et entre dans l&apos;Arène
+            Choisis ton Deck, règle la Difficulté et prépare tes 2 Jokers
           </h1>
           <p
             className={`text-slate-600 dark:text-slate-300 leading-relaxed ${
@@ -181,7 +194,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       {/* 1. Générateur de Deck Express (IA Gemini) */}
       {showGenerator && (
         <section className="rounded-2xl border border-indigo-200 dark:border-indigo-900/70 bg-white dark:bg-[#151f32] p-5 sm:p-6 shadow-md">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
             <div>
               <h2
                 className={`font-display font-bold text-slate-900 dark:text-white ${
@@ -195,22 +208,41 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               </p>
             </div>
 
-            {/* Sélecteur Collège / Lycée */}
-            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800 self-start">
-              {(['Collège', 'Lycée'] as SchoolLevel[]).map((lvl) => (
-                <button
-                  key={lvl}
-                  type="button"
-                  onClick={() => setGenLevel(lvl)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
-                    genLevel === lvl
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
-                  }`}
-                >
-                  {lvl === 'Collège' ? 'Collège (3e / Brevet)' : 'Lycée (1re / Bac)'}
-                </button>
-              ))}
+            {/* Sélecteurs Cycle (Collège/Lycée) + Difficulté IA */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
+                {(['Collège', 'Lycée'] as SchoolLevel[]).map((lvl) => (
+                  <button
+                    key={lvl}
+                    type="button"
+                    onClick={() => setGenLevel(lvl)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                      genLevel === lvl
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                    }`}
+                  >
+                    {lvl === 'Collège' ? 'Collège (Brevet)' : 'Lycée (Bac)'}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
+                {ALL_DIFFICULTY_TIERS.map((tier) => (
+                  <button
+                    key={tier}
+                    type="button"
+                    onClick={() => setGenDifficulty(tier)}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                      genDifficulty === tier
+                        ? 'bg-amber-500 text-slate-950 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                    }`}
+                  >
+                    {DIFFICULTY_CONFIGS[tier].label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -288,12 +320,12 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                 {isGenerating ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Forgeage des 12 cartes pièges...</span>
+                    <span>Forgeage des 12 cartes ({DIFFICULTY_CONFIGS[genDifficulty].label})...</span>
                   </>
                 ) : (
                   <>
                     <PlusCircle className="w-4 h-4" />
-                    <span>Générer le Deck de 12 Cartes</span>
+                    <span>Générer le Deck ({DIFFICULTY_CONFIGS[genDifficulty].label})</span>
                   </>
                 )}
               </button>
@@ -302,7 +334,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
         </section>
       )}
 
-      {/* Grille Principale : Sélection du Deck (Gauche) + Configuration Duel & Jokers (Droite) */}
+      {/* Grille Principale : Sélection du Deck (Gauche) + Configuration Duel, Difficulté & Jokers (Droite) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* COLONNE GAUCHE : Les Decks (7 cols) */}
         <section className="lg:col-span-7 space-y-4">
@@ -316,7 +348,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               <span>1. Choisis ton Deck de combat ({decks.length} disponibles)</span>
             </h2>
             <span className="text-xs text-slate-500 dark:text-slate-400">
-              Jouables hors-ligne
+              4 paliers : Facile, Moyen, Difficile, Expert
             </span>
           </div>
 
@@ -346,19 +378,33 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                       <span>
                         {deck.category} · {deck.level} · {deck.cards.length} cartes
                       </span>
-                      {deck.isCustom && (
+                      <div className="flex items-center gap-1">
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onDeleteCustomDeck(deck.id);
+                            setPreviewDeck(deck);
                           }}
-                          aria-label={`Supprimer le deck ${deck.title}`}
-                          className="p-1 rounded-lg hover:bg-rose-500/10 text-slate-400 hover:text-rose-500 transition-colors"
+                          title="Aperçu des cartes de ce deck"
+                          aria-label={`Aperçu des cartes du deck ${deck.title}`}
+                          className="p-1 rounded-lg hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-500 transition-colors cursor-pointer"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Eye className="w-3.5 h-3.5" />
                         </button>
-                      )}
+                        {deck.isCustom && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteCustomDeck(deck.id);
+                            }}
+                            aria-label={`Supprimer le deck ${deck.title}`}
+                            className="p-1 rounded-lg hover:bg-rose-500/10 text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <h3
@@ -394,7 +440,16 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                         <span>Cliquer pour équiper</span>
                       )}
                     </span>
-                    <span className="font-mono text-slate-400">+ Mort Subite</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewDeck(deck);
+                      }}
+                      className="text-slate-400 hover:text-indigo-500 underline cursor-pointer"
+                    >
+                      Voir les 12 cartes
+                    </button>
                   </div>
                 </div>
               );
@@ -402,17 +457,66 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           </div>
         </section>
 
-        {/* COLONNE DROITE : Mode de Jeu & Draft des 2 Cartes Joker (5 cols) */}
+        {/* COLONNE DROITE : Niveau de Difficulté, Mode de Jeu & Draft des 2 Cartes Joker (5 cols) */}
         <section className="lg:col-span-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#151f32] p-5 sm:p-6 space-y-6 shadow-xs">
-          {/* 2. Choix du Mode de Jeu */}
+          {/* 2. Niveau de Difficulté du Duel */}
           <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2
+                className={`font-display font-bold text-slate-900 dark:text-white flex items-center gap-2 ${
+                  isBigMode ? 'text-2xl' : 'text-lg sm:text-xl'
+                }`}
+              >
+                <Gauge className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <span>2. Niveau de Difficulté</span>
+              </h2>
+              <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                x{currentDiffConfig.scoreMultiplier.toFixed(1)} pts · {currentDiffConfig.turnSeconds}s
+              </span>
+            </div>
+
+            <div className="grid grid-cols-4 gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/90">
+              {ALL_DIFFICULTY_TIERS.map((tier) => {
+                const cfg = DIFFICULTY_CONFIGS[tier];
+                const isActive = difficultyTier === tier;
+                return (
+                  <button
+                    key={tier}
+                    type="button"
+                    onClick={() => onChangeDifficultyTier(tier)}
+                    className={`py-2 px-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      isActive
+                        ? tier === 'EXPERT'
+                          ? 'bg-rose-600 text-white shadow-xs'
+                          : tier === 'DIFFICILE'
+                            ? 'bg-amber-500 text-slate-950 shadow-xs'
+                            : 'bg-white dark:bg-[#1e293b] text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                    }`}
+                  >
+                    {cfg.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 flex items-center justify-between gap-2">
+              <span>{currentDiffConfig.subtitle}</span>
+              <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 shrink-0">
+                Chrono /2 : {currentDiffConfig.sabotagedSeconds}s
+              </span>
+            </div>
+          </div>
+
+          {/* 3. Choix du Mode de Jeu */}
+          <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-slate-800">
             <h2
               className={`font-display font-bold text-slate-900 dark:text-white flex items-center gap-2 ${
                 isBigMode ? 'text-2xl' : 'text-lg sm:text-xl'
               }`}
             >
               <Swords className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-              <span>2. Mode de Duel</span>
+              <span>3. Mode de Duel</span>
             </h2>
 
             <div className="grid grid-cols-2 gap-2.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/90">
@@ -464,6 +568,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   <div className="space-y-2">
                     {BOSS_PROFILES.map((boss) => {
                       const active = boss.id === selectedBossId;
+                      const effectiveAcc = Math.min(
+                        98,
+                        Math.max(35, Math.round((boss.accuracy + currentDiffConfig.bossAccuracyBoost) * 100))
+                      );
                       return (
                         <button
                           key={boss.id}
@@ -480,7 +588,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                               {boss.name}
                             </span>
                             <span className="font-mono text-xs text-indigo-600 dark:text-indigo-400 font-semibold">
-                              Précision {Math.round(boss.accuracy * 100)}%
+                              Précision {effectiveAcc}%
                             </span>
                           </div>
                           <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -522,12 +630,12 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
             )}
           </div>
 
-          {/* 3. Sélection libre des 2 Cartes Joker */}
+          {/* 4. Sélection libre des 2 Cartes Joker */}
           <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-slate-800">
             <div className="flex items-center justify-between">
               <h3 className="font-display font-bold text-sm sm:text-base text-slate-900 dark:text-white flex items-center gap-1.5">
                 <Zap className="w-4 h-4 text-amber-500 shrink-0" />
-                <span>3. Choisis tes 2 Cartes Joker ({player1Name || 'Joueur 1'})</span>
+                <span>4. Choisis tes 2 Cartes Joker ({player1Name || 'Joueur 1'})</span>
               </h3>
               <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
                 {p1Jokers.length}/2
@@ -613,10 +721,84 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
             className="w-full py-3.5 px-6 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-display font-bold text-base sm:text-lg shadow-md flex items-center justify-center gap-2.5 transition-all cursor-pointer"
           >
             <Play className="w-5 h-5 fill-white" />
-            <span>Lancer le Duel ({selectedDeck.title})</span>
+            <span>
+              Lancer le Duel · {currentDiffConfig.label} ({selectedDeck.title})
+            </span>
           </button>
         </section>
       </div>
+
+      {/* MODALE D'APERÇU DES 12 CARTES DU DECK */}
+      {previewDeck && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setPreviewDeck(null)}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[82vh] flex flex-col rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-slate-100 shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <div>
+                <h3 className="font-display font-bold text-lg sm:text-xl">
+                  Aperçu du Deck : {previewDeck.title}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {previewDeck.cards.length} cartes QCM à difficulté progressive + 1 carte Mort Subite
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewDeck(null)}
+                className="p-1.5 rounded-full hover:bg-slate-500/10 cursor-pointer"
+                aria-label="Fermer l'aperçu"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-3 divide-y divide-slate-200 dark:divide-slate-800">
+              {previewDeck.cards.map((card, i) => {
+                const tierLabel = card.tier || (i < 4 ? 'FACILE' : i < 8 ? 'MOYEN' : 'DIFFICILE');
+                return (
+                  <div key={card.id} className="pt-3 first:pt-0 space-y-1">
+                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                      <span className="font-mono font-bold">Carte #{i + 1}</span>
+                      <span>Calibre : {tierLabel}</span>
+                    </div>
+                    <p className="font-semibold text-sm sm:text-base">{card.question}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      4 choix : {card.options.join(' · ')}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setPreviewDeck(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 text-sm font-semibold cursor-pointer"
+              >
+                Fermer
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectDeck(previewDeck.id);
+                  setPreviewDeck(null);
+                }}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold cursor-pointer"
+              >
+                Équiper ce Deck
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

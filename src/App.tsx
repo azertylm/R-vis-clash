@@ -3,15 +3,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlphabetteDoubleBar } from './components/AlphabetteDoubleBar';
 import { LobbyView } from './components/LobbyView';
 import { DuelArenaView } from './components/DuelArenaView';
 import { SummaryView } from './components/SummaryView';
-import { BOSS_PROFILES, createJokerInstance, PREBUILT_DECKS } from './data/decks';
+import {
+  BOSS_PROFILES,
+  createJokerInstance,
+  PREBUILT_DECKS,
+  shuffleDeckForMatch,
+} from './data/decks';
 import {
   BossId,
   Deck,
+  DifficultyTier,
   GameMode,
   JokerType,
   MissedQuestionRecord,
@@ -41,7 +47,7 @@ export default function App() {
 
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [activeReadableText, setActiveReadableText] = useState<string>(
-    "Bienvenue sur Révis'Clash, l'arène de révision en 1 contre 1 de la suite Alphabette pour le Brevet et le Bac. Choisissez l'un des 4 decks hors-ligne ou générez un deck par IA à partir de votre cours."
+    "Bienvenue sur Révis'Clash, l'arène de révision en 1 contre 1 de la suite Alphabette pour le Brevet et le Bac. Choisissez l'un des 4 decks hors-ligne, réglez le niveau de difficulté, ou générez un deck par IA à partir de votre cours."
   );
 
   // Sync `.dark` class on `<html>`
@@ -71,7 +77,9 @@ export default function App() {
   const [customDecks, setCustomDecks] = useState<Deck[]>(() => {
     try {
       const raw = localStorage.getItem('alphabette_revisclash_custom_decks');
-      return raw ? JSON.parse(raw) : [];
+      if (!raw) return [];
+      const parsed: Deck[] = JSON.parse(raw);
+      return parsed.map((d) => shuffleDeckForMatch(d));
     } catch {
       return [];
     }
@@ -81,6 +89,7 @@ export default function App() {
 
   const [selectedDeckId, setSelectedDeckId] = useState<string>(PREBUILT_DECKS[0].id);
   const [gameMode, setGameMode] = useState<GameMode>('BOSS_SOLO');
+  const [difficultyTier, setDifficultyTier] = useState<DifficultyTier>('MOYEN');
   const [selectedBossId, setSelectedBossId] = useState<BossId>('MAJOR');
   const [player1Name, setPlayer1Name] = useState<string>('Joueur 1');
   const [player2Name, setPlayer2Name] = useState<string>('Joueur 2');
@@ -92,6 +101,7 @@ export default function App() {
   // Active Match State
   const [view, setView] = useState<AppView>('LOBBY');
   const [matchKey, setMatchKey] = useState(0);
+  const [overridePracticeDeck, setOverridePracticeDeck] = useState<Deck | null>(null);
   const [finalP1, setFinalP1] = useState<PlayerMatchState | null>(null);
   const [finalP2, setFinalP2] = useState<PlayerMatchState | null>(null);
   const [missedQuestions, setMissedQuestions] = useState<MissedQuestionRecord[]>([]);
@@ -100,9 +110,17 @@ export default function App() {
   const selectedDeck = allDecks.find((d) => d.id === selectedDeckId) || PREBUILT_DECKS[0];
   const selectedBoss = BOSS_PROFILES.find((b) => b.id === selectedBossId) || BOSS_PROFILES[1];
 
+  // Shuffle the 4 options (A, B, C, D) and order cards by difficultyTier on every new match
+  const activeMatchDeck = useMemo(
+    () => shuffleDeckForMatch(overridePracticeDeck || selectedDeck, difficultyTier),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedDeck, overridePracticeDeck, difficultyTier, matchKey]
+  );
+
   const handleAddCustomDeck = (newDeck: Deck) => {
+    const shuffledDeck = shuffleDeckForMatch(newDeck, difficultyTier);
     setCustomDecks((prev) => {
-      const next = [newDeck, ...prev];
+      const next = [shuffledDeck, ...prev];
       try {
         localStorage.setItem('alphabette_revisclash_custom_decks', JSON.stringify(next));
       } catch {
@@ -153,6 +171,24 @@ export default function App() {
 
   const handleStartDuel = () => {
     stopSpeech();
+    setOverridePracticeDeck(null);
+    setMatchKey((k) => k + 1);
+    setView('ARENA');
+  };
+
+  const handlePracticeMissedOnly = () => {
+    if (missedQuestions.length === 0) return;
+    stopSpeech();
+    const uniqueMissedCards = Array.from(
+      new Map(missedQuestions.map((m) => [m.card.id, m.card])).values()
+    );
+    const practiceDeck: Deck = {
+      ...selectedDeck,
+      id: `${selectedDeck.id}-remedial`,
+      title: `${selectedDeck.title} (Entraînement Erreurs)`,
+      cards: uniqueMissedCards,
+    };
+    setOverridePracticeDeck(practiceDeck);
     setMatchKey((k) => k + 1);
     setView('ARENA');
   };
@@ -173,6 +209,7 @@ export default function App() {
 
   const handleResetHome = () => {
     stopSpeech();
+    setOverridePracticeDeck(null);
     setView('LOBBY');
     setActiveReadableText(
       `Accueil Révis'Clash. Deck sélectionné : ${selectedDeck.title}. ${selectedDeck.subtitle}.`
@@ -231,6 +268,8 @@ export default function App() {
             onDeleteCustomDeck={handleDeleteCustomDeck}
             gameMode={gameMode}
             onChangeGameMode={setGameMode}
+            difficultyTier={difficultyTier}
+            onChangeDifficultyTier={setDifficultyTier}
             selectedBossId={selectedBossId}
             onSelectBoss={setSelectedBossId}
             player1Name={player1Name}
@@ -249,8 +288,9 @@ export default function App() {
         {view === 'ARENA' && (
           <DuelArenaView
             key={`duel-${matchKey}`}
-            deck={selectedDeck}
+            deck={activeMatchDeck}
             gameMode={gameMode}
+            difficultyTier={difficultyTier}
             boss={selectedBoss}
             initialP1={initialP1State}
             initialP2={initialP2State}
@@ -262,14 +302,16 @@ export default function App() {
 
         {view === 'SUMMARY' && finalP1 && finalP2 && (
           <SummaryView
-            deck={selectedDeck}
+            deck={activeMatchDeck}
             gameMode={gameMode}
+            difficultyTier={difficultyTier}
             p1={finalP1}
             p2={finalP2}
             missedRecords={missedQuestions}
             wasSuddenDeath={wasSuddenDeath}
             isBigMode={isBigMode}
             onReplaySameDeck={handleStartDuel}
+            onPracticeMissedOnly={handlePracticeMissedOnly}
             onBackToLobby={handleResetHome}
             onActiveTextChange={setActiveReadableText}
           />
